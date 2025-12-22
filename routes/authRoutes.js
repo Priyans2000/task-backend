@@ -6,9 +6,11 @@ const Admin = require("../models/Admin");
 
 const router = express.Router();
 
-// Admin User Pre-Creation
+// Admin User Pre-Creation - Run after MongoDB connection
 const createAdminUser = async () => {
   try {
+    // Wait a bit to ensure MongoDB is connected
+    await new Promise(resolve => setTimeout(resolve, 1000));
     const existingAdmin = await Admin.findOne({ email: "admin@example.com" });
     if (!existingAdmin) {
       const hashedPassword = await bcrypt.hash("admin123", 10);
@@ -22,10 +24,16 @@ const createAdminUser = async () => {
     }
   } catch (error) {
     console.error("Error creating admin user:", error);
+    // Don't throw - this is not critical for server startup
   }
 };
 
-createAdminUser();
+// Run admin creation asynchronously without blocking
+setTimeout(() => {
+  createAdminUser().catch(err => {
+    console.error("Failed to create admin user:", err);
+  });
+}, 2000);
 
 // Admin Login Route
 router.post("/admin/login", async (req, res) => {
