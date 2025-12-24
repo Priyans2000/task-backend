@@ -2,41 +2,33 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const User = require("../models/User");
-const Admin = require("../models/Admin");
 
 const router = express.Router();
 
-// Admin User Pre-Creation - Run after MongoDB connection
+// Admin User Pre-Creation
 const createAdminUser = async () => {
   try {
-    // Wait a bit to ensure MongoDB is connected
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    const existingAdmin = await Admin.findOne({ email: "admin@example.com" });
+    const existingAdmin = await User.findOne({ email: "admin@example.com" });
     if (!existingAdmin) {
       const hashedPassword = await bcrypt.hash("admin123", 10);
-      const admin = new Admin({
+      const admin = new User({
         username: "Admin",
         email: "admin@example.com",
         password: hashedPassword,
+        role: "admin",
       });
       await admin.save();
       console.log("Admin user created successfully!");
     }
   } catch (error) {
     console.error("Error creating admin user:", error);
-    // Don't throw - this is not critical for server startup
   }
 };
 
-// Run admin creation asynchronously without blocking
-setTimeout(() => {
-  createAdminUser().catch(err => {
-    console.error("Failed to create admin user:", err);
-  });
-}, 2000);
+createAdminUser();
 
 // Admin Login Route
-router.post("/admin/login", async (req, res) => {
+router.post("/login", async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -44,22 +36,19 @@ router.post("/admin/login", async (req, res) => {
       return res.status(400).json({ message: "Email and password are required" });
     }
 
-    const admin = await Admin.findOne({ email });
-    if (!admin) {
-      return res.status(401).json({ message: "Invalid credentials" });
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ message: "User not found" });
     }
 
-    const isMatch = await bcrypt.compare(password, admin.password);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(400).json({ message: "Invalid password" });
     }
 
     const token = jwt.sign(
-      { 
-        userId: admin._id, 
-        role: 'admin'  // Explicitly set role as admin
-      },
-      process.env.JWT_SECRET || 'your_jwt_secret',
+      { id: user._id, role: user.role },
+      process.env.JWT_SECRET || "your_jwt_secret",
       { expiresIn: "1h" }
     );
 
@@ -67,21 +56,23 @@ router.post("/admin/login", async (req, res) => {
       message: "Login successful",
       token,
       user: {
-        _id: admin._id,
-        username: admin.username,
-        email: admin.email,
-        role: 'admin'
+        id: user._id,
+        username: user.username,
+        email: user.email,
+        role: user.role
       }
     });
 
   } catch (err) {
-    console.error("Admin login error:", err);
+    console.error("Login error:", err);
     res.status(500).json({ message: "Server error", error: err.message });
   }
 });
 
 // User Login Route
 router.post("/user/login", async (req, res) => {
+  console.log("User login attempt:", req.body);
+  
   try {
     const { email, password } = req.body;
 
@@ -92,6 +83,10 @@ router.post("/user/login", async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) {
       return res.status(401).json({ message: "Invalid credentials" });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(401).json({ message: "Please use admin login" });
     }
 
     const isMatch = await bcrypt.compare(password, user.password);
@@ -125,7 +120,7 @@ router.post("/user/login", async (req, res) => {
 // Create User Route
 router.post("/create-user", async (req, res) => {
   try {
-    const { username, email, password } = req.body;
+    const { username, email, password, role } = req.body;
 
     if (!username || !email || !password) {
       return res.status(400).json({ message: "All fields are required" });
@@ -141,6 +136,7 @@ router.post("/create-user", async (req, res) => {
       username,
       email,
       password: hashedPassword,
+      role: role || 'user'
     });
 
     await newUser.save();

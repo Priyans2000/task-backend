@@ -44,7 +44,7 @@ exports.registerAdmin = async () => {
       });
 
       await admin.save();
-      // console.log("Admin created successfully");
+      console.log("Admin created successfully");
     } else {
       console.log("Admin already exists");
     }
